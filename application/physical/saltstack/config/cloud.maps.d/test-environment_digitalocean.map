@@ -1,0 +1,8 @@
+test-saltmaster:
+  - saltmaster:
+      make_master: True
+
+#test-minion:
+#  - test1
+#  - test2
+
