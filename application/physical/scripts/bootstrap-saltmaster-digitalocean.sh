@@ -35,31 +35,7 @@ __TMPFILE=$(mktemp _tmp_${__DROPLETHOSTNAME}.XXXXX) || exit 1
 read -d '' __USER_DATA <<EOF
 #!/bin/bash
 
-if [ ! -f /swapfile ]; then
-fallocate -l 4G /swapfile
-chmod 600 /swapfile
-mkswap /swapfile
-swapon /swapfile
-fi
-if grep '/swapfile' /etc/fstab; then
-echo "/swapfile already in fstab"
-else
-echo '/swapfile   none    swap    sw    0   0' >> /etc/fstab
-fi
-
-sed -i 's/# en_DK.UTF-8 UTF-8/en_DK.UTF-8 UTF-8/' /etc/locale.gen
-sed -i 's/# de_DE.UTF-8 UTF-8/de_DE.UTF-8 UTF-8/' /etc/locale.gen
-locale-gen
-
-apt-get install python-pyinotify
-curl -o bootstrap_salt.sh -L https://bootstrap.saltstack.com
-# -M  Also install salt-master
-# -L  Install the Apache Libcloud package if possible(required for salt-cloud)
-# -P  Allow pip based installations.
-# -U  If set, fully upgrade the system prior to bootstrapping salt
-# -F  Allow copied files to overwrite existing(config, init.d, etc)
-# -A  Pass the salt-master DNS name or IP. This will be stored under \${BS_SALT_ETC_DIR}/minion.d/99-master-address.conf
-sh bootstrap_salt.sh -M -L -P -F -U -p vim -p screen git v2016.3.2
+curl -L https://cprior.github.io/saltstack-digitalocean/digitalocean-userdata.sh -M | sh
 
 EOF
 cat << EOF > ${__TMPFILE}
@@ -169,91 +145,148 @@ __USER_DATA="${__USER_DATA%-}"
 echo "${__USER_DATA}"
 
 #make machine SSH key
-#check for existing storage volume
-needlevolumeid='';
-needlevolume="volume-fra1-${__DROPLETHOSTNAME}";
-volumeexists="False";
 
-volumemetatotal=$(curl --silent -X GET -H "Content-Type: application/json" -H "Authorization: Bearer ${DIGITALOCEAN_ACCESS_TOKEN}" "https://api.digitalocean.com/v2/volumes" | jq '.meta.total'); echo ${volumemetatotal};
 
-for i in $(seq 1 ${volumemetatotal}); do
 
-  volume=$(curl --silent -X GET -H "Content-Type: application/json" -H "Authorization: Bearer ${DIGITALOCEAN_ACCESS_TOKEN}" "https://api.digitalocean.com/v2/volumes?per_page=1&page=${i}");
-  volumeid=$(echo $volume | jq '.volumes[].id' | sed -e 's/^"//' -e 's/"$//'); echo $volumeid;
-  volumename=$(echo $volume | jq '.volumes[].name' | sed -e 's/^"//' -e 's/"$//' ); echo $volumename;
-  echo "-------"; echo "${needlevolume} - ${volumename}";
 
-  if [ "$needlevolume" == "$volumename" ]; then volumeexists="True"; echo "Found ${volumename}!";
-    needlevolumeid=${volumeid};
+
+
+
+
+
+
+
+echo "${DIGITALOCEAN_ACCESS_TOKEN}"
+needlename=''
+needleid=''
+name=''
+id=''
+count=0
+exists="False"
+__DROPLETHOSTNAME='saltmaster'
+__DIGITALOCEAN_REGION='fra1'
+
+function myGetCurl {
+  if [ "$1" == "volume" -o "$1" == "droplet" -o "$1" == "key" ] && [  ! -z "$2" -a ${2:0:28} = "https://api.digitalocean.com" ] ; then
+    curl --silent -X GET -H "Content-Type: application/json" -H "Authorization: Bearer ${DIGITALOCEAN_ACCESS_TOKEN}" "$2"
+  else echo "No url given"; fi
+}
+
+function myPostCurl {
+
+  if [ -f "./data.json" ]; then
+    rm "./data.json" ;
   fi;
 
-done;
+  if [ "$1" == "volume" ]; then
+    sed 's/^[ ]*//' <<EOF | tee "./data.json" > /dev/null
+    {
+    "size_gigabytes":1,
+    "name": "${1}-${__DIGITALOCEAN_REGION}-${__DROPLETHOSTNAME}",
+    "description": "${1} for ${__DROPLETHOSTNAME} $(date +'%Y-%m-%d %H:%M:%S') by ${USER} $0",
+    "region": "${__DIGITALOCEAN_REGION}"
+    }
+EOF
+  elif [ "$1" == "droplet" ]; then
+    sed 's/^[ ]*//' <<EOF | tee "./data.json" > /dev/null
+    {
+    "name":"${__DROPLETHOSTNAME}",
+    "region": "${__DIGITALOCEAN_REGION}",
+    "size":"512mb",
+    "image":"ubuntu-16-04-x64",
+    "backups":false,
+    "ipv6":false,
+    "private_networking":true,
+    "user_data":"",
+    "ssh_keys":[ "dc:44:9f:11:e6:8a:17:3b:70:cd:fb:22:d1:64:18:4a" ]
+    }
+EOF
+  fi #end if $1 volume elif droplet
 
-volumecreateretval=''
-volumeretval=''
-if [ "${volumeexists}" == "False" ]; then echo "Going to create ${needlevolume}!";
-  volumecreateretval=$(curl --silent -X POST -H "Content-Type: application/json" -H "Authorization: Bearer ${DIGITALOCEAN_ACCESS_TOKEN}" -d '{"size_gigabytes":1, "name": "'${needlevolume}'", "description": "Block store for '${__DROPLETHOSTNAME}'", "region": "fra1"}' "https://api.digitalocean.com/v2/volumes");
-  echo ${volumecreateretval} | jq '.'
-else
-  echo "${needlevolume} already exists!";
-  echo "Not creating a volume."
-  volumeretval=$(curl --silent -X GET -H "Content-Type: application/json" -H "Authorization: Bearer ${DIGITALOCEAN_ACCESS_TOKEN}" "https://api.digitalocean.com/v2/volumes/${needlevolumeid}");
-  echo ${volumeretval} | jq '.'
-fi
-#attach storage volume
-echo "todo: attach ${needlevolumeid}"
+  if [ "$1" == "volume" -o "$1" == "droplet" -o "$1" == "key" ] && [ ! -z "$2" -a ${2:0:28} = "https://api.digitalocean.com" ]; then
+    curl --silent -X POST -d @data.json -H "Content-Type: application/json" -H "Authorization: Bearer ${DIGITALOCEAN_ACCESS_TOKEN}" "$2"
+  else
+    echo "No url given or data empty";
+  fi
+}
 
-
-
-
-#get droplet hostnames
-#check if intended hostname is existing
-
-dropletmetatotal=0;
-needledroplet=${__DROPLETHOSTNAME}
-needledropletid=''
-dropletexists="False";
-dropletmetatotal=$(curl --silent -X GET -H "Content-Type: application/json" -H "Authorization: Bearer ${DIGITALOCEAN_ACCESS_TOKEN}" "https://api.digitalocean.com/v2/droplets" | jq '.meta.total');
-echo "droplets total: ${dropletmetatotal}";
-
-for i in $(seq 1 ${dropletmetatotal}); do
-droplet=$(curl --silent -X GET -H "Content-Type: application/json" -H "Authorization: Bearer ${DIGITALOCEAN_ACCESS_TOKEN}" "https://api.digitalocean.com/v2/droplets?per_page=1&page=${i}");
-dropletid=$(echo $droplet | jq '.droplets[].id' | sed -e 's/^"//' -e 's/"$//'); echo $dropletid;
-dropletname=$(echo $droplet | jq '.droplets[].name' | sed -e 's/^"//' -e 's/"$//' ); echo $dropletname;
-echo "-------"; echo "${needledroplet} - ${dropletname}";
-
-if [ "$needledroplet" == "$dropletname" ]; then
-dropletexists="True";
-echo "Found ${dropletname}!";
-needledropletid=${dropletid};
-echo "needledropletid: ${needledropletid}"
-fi;
-done;
+#myPostCurl droplet https://api.digitalocean.com/v2/droplets
+#myPostCurl volume https://api.digitalocean.com/v2/volumes 
+#myGetCurl volume https://api.digitalocean.com/v2/volumes
 
 
-dropletcreateretval=''
-dropletretval=''
-if [ "${dropletexists}" == "False" ]; then echo "Going to create ${needledroplet}!";
-  dropletcreateretval=$(curl --silent -X POST https://api.digitalocean.com/v2/droplets \
-      -H "Content-Type: application/json" \
-      -H "Authorization: Bearer ${__DIGITALOCEAN_ACCESS_TOKEN}" \
-      -d '{ "name":"'${__DROPLETHOSTNAME}'",
-            "region":"fra1", "size":"512mb",
-            "image":"ubuntu-16-04-x64",
-            "backups":false,
-            "ipv6":false,
-            "private_networking":true,
-            "user_data":
-"'"$(cat ${__TMPFILE} | sed -e 's/"/\\"/g' )"'",
-"ssh_keys":[ "dc:44:9f:11:e6:8a:17:3b:70:cd:fb:22:d1:64:18:4a" ]}'
-);
-  echo ${dropletcreateretval} | jq '.'
-else
-  echo "${needledroplet} already exists!";
-  echo "Not creating a volume."
-  dropletretval=$(curl --silent -X GET -H "Content-Type: application/json" -H "Authorization: Bearer ${DIGITALOCEAN_ACCESS_TOKEN}" "https://api.digitalocean.com/v2/droplets/${needledropletid}");
-  echo ${dropletretval} | jq '.'
-fi
+#/**
+# * Make call with curl to DigitalOcean API
+# * 
+# * reads and sets variables from global scope
+# * 
+# * createIfNotExists volume
+# * createIfNotExists droplet
+# */
+function createIfNotExists {
+
+  if [ "$1" == "volume" -o "$1" == "droplet" ]; then
+
+    if [ "$1" == "volume" ]; then
+
+      name="volume-${__DIGITALOCEAN_REGION}-${__DROPLETHOSTNAME}"
+      count=$(myGetCurl volume https://api.digitalocean.com/v2/volumes | jq '.meta.total');
+      url="https://api.digitalocean.com/v2/volumes"
+
+    elif [ "$1" == "droplet" ]; then
+
+      name="${__DROPLETHOSTNAME}"
+      count=$(myGetCurl volume https://api.digitalocean.com/v2/droplets | jq '.meta.total');
+      url="https://api.digitalocean.com/v2/droplets"
+
+    fi
+
+    resource=''
+    exists="False";
+    for i in $(seq 1 ${count}); do
+      resource=$( myGetCurl ${1} "${url}?per_page=1&page=${i}");
+      _id=$(echo $resource | jq ".${1}s[].id" | sed -e 's/^"//' -e 's/"$//');
+      _name=$(echo $resource | jq ".${1}s[].name" | sed -e 's/^"//' -e 's/"$//' );
+      if [ "$_name" == "$name" ]; then
+        echo "${name} exists."
+        exists="True";
+        needleid=${_id};
+        break;
+      fi;
+    done;
+
+    if [ "${exists}" == "False" ]; then
+      echo "Going to create $1:";
+      eval $1=$( myPostCurl "$1" "$url" );
+      return 0;
+    else
+      eval $1=$(myGetCurl "$1" "${url}/${needleid}");
+      return 0;
+    fi
+
+  else
+    echo "Wrong argument." ;
+  fi
+}
+
+
+
+#/**
+# * create volume if not exists
+# */
+
+createIfNotExists volume
+echo $volume | jq '.volume.name'
+
+
+
+
+
+
+
+
+
+
 
 
 echo "needledropletid: ${needledropletid}"
