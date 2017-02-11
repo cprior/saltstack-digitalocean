@@ -15,7 +15,7 @@
 
 __SALTMASTER="False"
 
-while getopts "M" opt; do
+while getopts "Mv" opt; do
   case $opt in
     M) __SALTMASTER="True"
     ;;
@@ -47,11 +47,11 @@ sed -i 's/# de_DE.UTF-8 UTF-8/de_DE.UTF-8 UTF-8/' /etc/locale.gen
 locale-gen
 
 
-if test "${__SALTMASTER}" = 'True' ; then
+if [ "${__SALTMASTER}" == 'True' ]; then
 
 apt-get -y install python-pyinotify python-pygit2
 
-curl -o bootstrap_salt.sh -L https://bootstrap.saltstack.com
+
 if [ ! -d /etc/salt/master.d ]; then mkdir -p /etc/salt/master.d ; fi
 tee /etc/salt/master.d/90_fileserver_backend.conf <<EOF >/dev/null
 fileserver_backend:
@@ -70,16 +70,22 @@ EOF
 # -U  If set, fully upgrade the system prior to bootstrapping salt
 # -F  Allow copied files to overwrite existing(config, init.d, etc)
 # -A  Pass the salt-master DNS name or IP.
-sh bootstrap_salt.sh -M -A ${PRIVATE_IPV4} -L -P -F -U -p vim -p screen git v2016.3.2
+curl -L https://bootstrap.saltstack.com | sudo sh -s -- -M -A ${PRIVATE_IPV4} -L -P -F -U -i "${HOSTNAME}" -p vim -p screen git v2016.11.2
 
-while true; do
-  if grep ${HOSTNAME} <(salt-key -L); then
-    salt-key -y -a ${HOSTNAME}
-    break;
-  else
-    sleep 1;
-  fi;
-done
+#sleep 30;
+
+#while true; do
+#  if grep ${HOSTNAME} <(salt-key -L); then
+#    salt-key -y -a ${HOSTNAME}
+#    break;
+#  else
+#    sleep 1;
+#  fi;
+#done
+
+else
+
+curl -L https://bootstrap.saltstack.com | sudo sh -s -- -L -P -F -U -i "${HOSTNAME}" -p vim -p screen git v2016.11.2
 
 fi
 
