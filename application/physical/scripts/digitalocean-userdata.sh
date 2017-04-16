@@ -109,7 +109,7 @@ EOF
 # -U  If set, fully upgrade the system prior to bootstrapping salt #####do not use because of some apt-get lock
 # -F  Allow copied files to overwrite existing(config, init.d, etc)
 # -A  Pass the salt-master DNS name or IP.
-curl -L https://bootstrap.saltstack.com | sudo sh -s -- -M -A ${PRIVATE_IPV4} -L -P -F -i "${HOSTNAME}" -p vim -p screen git v2016.11.2
+curl -L https://bootstrap.saltstack.com | sudo sh -s -- -M -A ${PRIVATE_IPV4} -L -P -F -i "${HOSTNAME}" -p vim -p screen git v2016.11.3
 
 salt-call --local ssh.set_known_host root bitbucket.org
 
@@ -132,7 +132,7 @@ done
 #test "${__SALTMASTERINSTALL}" = 'True'
 else
 
-curl -L https://bootstrap.saltstack.com | sudo sh -s -- -A ${__SALTMASTERHOSTNAME}-L -P -F -i "${HOSTNAME}" -p vim -p screen git v2016.11.2
+curl -L https://bootstrap.saltstack.com | sudo sh -s -- -A ${__SALTMASTERHOSTNAME}-L -P -F -i "${HOSTNAME}" -p vim -p screen git v2016.11.3
 
 fi
 
